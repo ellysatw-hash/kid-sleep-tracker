@@ -3,168 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小當家作戰總部</title>
+    <title>小當家作戰總部-多子版</title>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
     <style>
         :root { --primary: #6c5ce7; --bg: #f0f2f5; }
         body { font-family: "Microsoft JhengHei", sans-serif; background: var(--bg); padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 450px; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
-        h1 { font-size: 1.5rem; color: var(--primary); text-align: center; }
-        .input-group { text-align: left; margin-bottom: 15px; }
+        h1 { font-size: 1.5rem; color: var(--primary); text-align: center; margin-top: 0; }
+        .input-group { text-align: left; margin-bottom: 12px; }
         label { font-weight: bold; font-size: 0.9rem; color: #636e72; }
-        input { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 1px solid #dfe6e9; box-sizing: border-box; font-size: 1rem; }
-        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 20px 0; border-radius: 8px; font-size: 0.95rem; line-height: 1.6; min-height: 60px; }
-        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #a29bfe; }
-        .chart-section { width: 100%; max-width: 450px; margin-top: 30px; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        select, input { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 1px solid #dfe6e9; box-sizing: border-box; font-size: 1rem; }
+        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 15px 0; border-radius: 8px; font-size: 0.95rem; min-height: 60px; }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; }
+        .chart-section { width: 100%; max-width: 450px; margin-top: 20px; background: white; padding: 20px; border-radius: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🌙 睡前大挑戰</h1>
+    <h1>🌙 睡前挑戰</h1>
     
+    <div class="input-group">
+        <label>你是誰？</label>
+        <select id="childName" onchange="runUpdateChart()">
+            <option value="大寶">大寶</option>
+            <option value="二寶">二寶</option>
+        </select>
+    </div>
+
     <div class="input-group">
         <label>目標就寢時間</label>
         <input type="time" id="bedtime" value="21:30" oninput="runCalculate()">
     </div>
     
     <div class="input-group">
-        <label>今晚複習科目</label>
-        <input type="text" id="subjects" placeholder="例如：數學、英文" oninput="runCalculate()">
+        <label>複習科目</label>
+        <input type="text" id="subjects" placeholder="科目名稱" oninput="runCalculate()">
     </div>
 
-    <div id="result-display">請輸入時間與科目...</div>
-    
-    <button onclick="runFinish()">我準時完成了！ 🎉</button>
+    <div id="result-display">請輸入時間...</div>
+    <button onclick="runFinish()">我完成了！ 🎉</button>
 </div>
 
 <div class="chart-section">
-    <h3 style="text-align: center;">📊 達成紀錄統計</h3>
+    <h3 id="chart-title" style="text-align: center;">統計圖表</h3>
     <canvas id="myChart"></canvas>
 </div>
 
 <script>
-    // ======= 1. 設定區 (已填入你的 URL 與 Key) =======
     const MY_PROJECT_URL = 'https://jcclynwwvcnjnjcorlqr.supabase.co'; 
     const MY_PROJECT_KEY = 'sb_publishable_hCm34wTgpGWyJkWKNApTEw_4Xu_f1Vq';
-
     let mySupabase;
 
-    // 初始化連線
     try {
-        // 使用 window.supabase 存取庫，避免變數名稱衝突
         mySupabase = window.supabase.createClient(MY_PROJECT_URL, MY_PROJECT_KEY);
-    } catch (e) {
-        console.error("資料庫連線初始化失敗", e);
-    }
+    } catch (e) { console.error(e); }
 
-    // 網頁載入完成後執行
-    window.onload = () => {
-        runCalculate();
-        runUpdateChart();
-    };
+    window.onload = () => { runCalculate(); runUpdateChart(); };
 
-    // ======= 2. 緩衝時間計算邏輯 =======
     function runCalculate() {
         const bedtimeInput = document.getElementById('bedtime').value;
         const subjectsInput = document.getElementById('subjects').value;
         const displayDiv = document.getElementById('result-display');
-
         if (!bedtimeInput) return;
-
         const now = new Date();
         const [h, m] = bedtimeInput.split(':');
         const target = new Date();
         target.setHours(parseInt(h), parseInt(m), 0);
-
-        // 如果設定時間已過，視為明天
         if (target < now) target.setDate(target.getDate() + 1);
-
         let totalMin = Math.floor((target - now) / 60000);
-        const fixed = 30; // 固定雜務（洗澡等）
-        const buffer = Math.max(0, Math.floor((totalMin - fixed) * 0.15)); // 15% 緩衝
+        const fixed = 30;
+        const buffer = Math.max(0, Math.floor((totalMin - fixed) * 0.15));
         const study = Math.max(0, totalMin - fixed - buffer);
-
         const subs = subjectsInput.split(/[,，、\s]+/).filter(s => s.trim() !== "");
         const perSub = Math.floor(study / (subs.length || 1));
-
-        displayDiv.innerHTML = `
-            🕒 距離就寢：<strong>${totalMin} 分鐘</strong><br>
-            🛡️ 緩衝時間：<strong>${buffer} 分鐘</strong><br>
-            📚 每個科目：約 <strong>${perSub} 分鐘</strong>
-        `;
+        displayDiv.innerHTML = `🕒 剩餘：${totalMin}分 | 🛡️ 緩衝：${buffer}分<br>📚 每個科目：約 ${perSub} 分鐘`;
     }
 
-    // ======= 3. 完成任務與噴紙屑 =======
     async function runFinish() {
-        // 不管資料庫成不成功，先噴紙屑給孩子看
         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-
+        const name = document.getElementById('childName').value;
         const bedtime = document.getElementById('bedtime').value;
         const subjects = document.getElementById('subjects').value;
 
-        if (!mySupabase) {
-            alert("噴紙屑成功！但資料庫設定有誤，無法存檔。");
-            return;
-        }
+        const { error } = await mySupabase.from('daily_plans').insert([
+            { child_name: name, bedtime: bedtime, subjects: subjects, is_on_time: true }
+        ]);
 
-        const { error } = await mySupabase
-            .from('daily_plans')
-            .insert([{ bedtime, subjects, is_on_time: true }]);
-
-        if (error) {
-            alert("存檔失敗：" + error.message);
-        } else {
-            alert("太棒了！紀錄已儲存。");
-            runUpdateChart(); // 重新畫圖
+        if (error) alert("存檔失敗：" + error.message);
+        else {
+            alert(name + " 太棒了！紀錄已儲存。");
+            runUpdateChart();
         }
     }
 
-    // ======= 4. 更新統計圖表 =======
     let myChartInstance;
     async function runUpdateChart() {
         if (!mySupabase) return;
+        const currentChild = document.getElementById('childName').value;
+        document.getElementById('chart-title').innerText = currentChild + " 的達成紀錄";
 
+        // 這裡關鍵：增加 filter (.eq)，只抓取選定孩子的資料
         const { data, error } = await mySupabase
             .from('daily_plans')
             .select('*')
+            .eq('child_name', currentChild)
             .order('created_at', { ascending: true })
             .limit(30);
 
-        if (error || !data || data.length === 0) return;
+        if (error || !data) return;
 
-        const labels = data.map(d => {
-            const date = new Date(d.created_at);
-            return (date.getMonth() + 1) + "/" + date.getDate();
-        });
-        const successData = data.map(d => 1); // 只要有紀錄就視為達成
-
+        const labels = data.map(d => (new Date(d.created_at).getMonth() + 1) + "/" + new Date(d.created_at).getDate());
+        const successData = data.map(d => 1);
         const ctx = document.getElementById('myChart').getContext('2d');
         if (myChartInstance) myChartInstance.destroy();
-
         myChartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
-                datasets: [{
-                    label: '達標紀錄',
-                    data: successData,
-                    backgroundColor: '#a29bfe'
-                }]
+                datasets: [{ label: '達成次數', data: successData, backgroundColor: '#a29bfe' }]
             },
-            options: {
-                responsive: true,
-                scales: { 
-                    y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } 
-                }
-            }
+            options: { scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } } }
         });
     }
 </script>
-
 </body>
 </html>
