@@ -13,16 +13,18 @@
         .container { width: 100%; max-width: 450px; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
         .input-group { text-align: left; margin-bottom: 12px; }
         label { font-weight: bold; font-size: 0.9rem; color: #636e72; }
-        select { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 2px solid var(--primary); background-color: #f0edff; font-size: 1.1rem; cursor: pointer; }
-        input { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 1px solid #dfe6e9; box-sizing: border-box; font-size: 1rem; }
-        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 15px 0; border-radius: 8px; font-size: 0.95rem; min-height: 60px; line-height: 1.6; }
+        select, input[type="time"] { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 2px solid var(--primary); background-color: #f0edff; font-size: 1.1rem; cursor: pointer; }
         
-        /* 完成時間顯示區塊 */
+        /* 勾選清單樣式 */
+        .subject-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; background: #fff; padding: 10px; border-radius: 10px; border: 1px solid #dfe6e9; }
+        .subject-item { display: flex; align-items: center; font-size: 0.9rem; cursor: pointer; }
+        .subject-item input { margin-right: 5px; width: 18px; height: 18px; cursor: pointer; }
+
+        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 15px 0; border-radius: 8px; font-size: 0.95rem; line-height: 1.6; }
         .actual-time-box { background: #e8faf4; color: var(--success); padding: 10px; border-radius: 10px; text-align: center; margin-bottom: 15px; font-weight: bold; display: none; }
-        
         button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; }
-        button:hover { background: #a29bfe; }
-        .chart-section { width: 100%; max-width: 450px; margin-top: 20px; background: white; padding: 20px; border-radius: 20px; }
+        .chart-section { width: 100%; max-width: 450px; margin-top: 20px; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        h3 { margin-bottom: 15px; font-size: 1.1rem; }
     </style>
 </head>
 <body>
@@ -44,20 +46,34 @@
     </div>
     
     <div class="input-group">
-        <label>複習科目 / 任務</label>
-        <input type="text" id="subjects" placeholder="例如：數學、整理書包" oninput="runCalculate()">
+        <label>任務勾選：</label>
+        <div class="subject-grid" id="subjectGrid">
+            <label class="subject-item"><input type="checkbox" value="國語" onchange="runCalculate()">國語</label>
+            <label class="subject-item"><input type="checkbox" value="數學" onchange="runCalculate()">數學</label>
+            <label class="subject-item"><input type="checkbox" value="英文" onchange="runCalculate()">英文</label>
+            <label class="subject-item"><input type="checkbox" value="地理" onchange="runCalculate()">地理</label>
+            <label class="subject-item"><input type="checkbox" value="歷史" onchange="runCalculate()">歷史</label>
+            <label class="subject-item"><input type="checkbox" value="公民" onchange="runCalculate()">公民</label>
+            <label class="subject-item"><input type="checkbox" value="物理" onchange="runCalculate()">物理</label>
+            <label class="subject-item"><input type="checkbox" value="化學" onchange="runCalculate()">化學</label>
+            <label class="subject-item"><input type="checkbox" value="運動" onchange="runCalculate()">運動</label>
+            <label class="subject-item"><input type="checkbox" value="其他" onchange="runCalculate()">其他</label>
+        </div>
     </div>
 
-    <div id="result-display">讀取中...</div>
-
+    <div id="result-display">請設定時間與科目...</div>
     <div id="actual-time-display" class="actual-time-box"></div>
-    
     <button onclick="runFinish()">我完成了！ 🎉</button>
 </div>
 
 <div class="chart-section">
-    <h3 id="chart-title" style="text-align: center; color: #6c5ce7;">進度追蹤</h3>
+    <h3 id="chart-title" style="text-align: center; color: var(--primary);">進度追蹤</h3>
     <canvas id="myChart"></canvas>
+</div>
+
+<div class="chart-section">
+    <h3 style="text-align: center; color: var(--primary);">時間都花在哪裡？(近30筆)</h3>
+    <canvas id="pieChart"></canvas>
 </div>
 
 <script>
@@ -69,111 +85,98 @@
         mySupabase = window.supabase.createClient(MY_PROJECT_URL, MY_PROJECT_KEY);
     } catch (e) { console.error(e); }
 
-    window.onload = () => { 
-        runCalculate(); 
-        setTimeout(runUpdateChart, 500);
-    };
+    window.onload = () => { runCalculate(); setTimeout(runUpdateChart, 500); };
+
+    function getCheckedSubjects() {
+        const checkboxes = document.querySelectorAll('#subjectGrid input:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    }
 
     function runCalculate() {
         const bedtimeInput = document.getElementById('bedtime').value;
-        const subjectsInput = document.getElementById('subjects').value;
+        const checkedSubs = getCheckedSubjects();
         const displayDiv = document.getElementById('result-display');
+        
         if (!bedtimeInput) return;
         const now = new Date();
         const [h, m] = bedtimeInput.split(':');
         const target = new Date();
         target.setHours(parseInt(h), parseInt(m), 0);
         if (target < now) target.setDate(target.getDate() + 1);
+        
         let totalMin = Math.floor((target - now) / 60000);
         const fixed = 30;
         const buffer = Math.max(0, Math.floor((totalMin - fixed) * 0.15));
         const study = Math.max(0, totalMin - fixed - buffer);
-        const subs = subjectsInput.split(/[,，、\s]+/).filter(s => s.trim() !== "");
-        const perSub = Math.floor(study / (subs.length || 1));
-        displayDiv.innerHTML = `🕒 距離目標：<strong>${totalMin}</strong> 分鐘<br>🛡️ 緩衝時間：<strong>${buffer}</strong> 分鐘<br>📊 任務分配：平均 <strong>${perSub}</strong> 分鐘`;
+        const perSub = checkedSubs.length > 0 ? Math.floor(study / checkedSubs.length) : 0;
+        
+        displayDiv.innerHTML = `🕒 距離目標：<strong>${totalMin}</strong> 分鐘<br>🛡️ 緩衝時間：<strong>${buffer}</strong> 分鐘<br>📊 勾選 <strong>${checkedSubs.length}</strong> 項，每項分得 <strong>${perSub}</strong> 分鐘`;
     }
 
     async function runFinish() {
-        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-        
-        // 獲取當前實際時間
-        const now = new Date();
-        const actualTime = now.getHours().toString().padStart(2, '0') + ":" + 
-                           now.getMinutes().toString().padStart(2, '0');
-
         const name = document.getElementById('childName').value;
-        const bedtime = document.getElementById('bedtime').value;
-        const subjects = document.getElementById('subjects').value;
+        const checkedSubs = getCheckedSubjects();
+        if (checkedSubs.length === 0) {
+            alert("請至少勾選一項任務喔！");
+            return;
+        }
 
-        // 顯示在網頁畫面上
-        const timeBox = document.getElementById('actual-time-display');
-        timeBox.style.display = 'block';
-        timeBox.innerText = `✅ 紀錄成功！實際完成時間：${actualTime}`;
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+        const now = new Date();
+        const actualTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+        
+        const { error } = await mySupabase.from('daily_plans').insert([{ 
+            child_name: name, 
+            bedtime: document.getElementById('bedtime').value, 
+            subjects: checkedSubs.join(','), // 為了兼容舊欄位
+            checked_subjects: checkedSubs.join(','), // 新欄位
+            is_on_time: true,
+            actual_finish_time: actualTime 
+        }]);
 
-        const { error } = await mySupabase.from('daily_plans').insert([
-            { 
-                child_name: name, 
-                bedtime: bedtime, 
-                subjects: subjects, 
-                is_on_time: true,
-                actual_finish_time: actualTime // 存入實際時間
-            }
-        ]);
-
-        if (error) {
-            alert("存檔失敗：" + error.message);
-        } else {
-            setTimeout(() => {
-                alert(name + " 紀錄成功！完成時間：" + actualTime);
-            }, 500);
+        if (error) alert("存檔失敗：" + error.message);
+        else {
+            document.getElementById('actual-time-display').style.display = 'block';
+            document.getElementById('actual-time-display').innerText = `✅ 紀錄成功！實際完成：${actualTime}`;
             runUpdateChart();
         }
     }
 
-    let myChartInstance;
+    let barChart, pieChart;
     async function runUpdateChart() {
         if (!mySupabase) return;
         const currentChild = document.getElementById('childName').value;
         document.getElementById('chart-title').innerText = currentChild + " 的達標紀錄";
 
-        const { data, error } = await mySupabase
-            .from('daily_plans')
-            .select('*')
-            .eq('child_name', currentChild)
-            .order('created_at', { ascending: true })
-            .limit(30);
-
+        const { data, error } = await mySupabase.from('daily_plans').select('*').eq('child_name', currentChild).order('created_at', { ascending: false }).limit(30);
         if (error || !data) return;
 
-        const labels = data.map(d => {
-            const date = new Date(d.created_at);
-            const dateStr = (date.getMonth() + 1) + "/" + date.getDate();
-            // 在標籤上同時顯示實際時間（如果有的話）
-            return d.actual_finish_time ? `${dateStr} (${d.actual_finish_time})` : dateStr;
-        });
-        
-        const successData = data.map(d => 1);
-        const ctx = document.getElementById('myChart').getContext('2d');
-        if (myChartInstance) myChartInstance.destroy();
-        myChartInstance = new Chart(ctx, {
+        // --- 條形圖 (Bar Chart) ---
+        const barLabels = [...data].reverse().map(d => (new Date(d.created_at).getMonth()+1)+"/"+new Date(d.created_at).getDate());
+        const barData = data.map(() => 1);
+        if (barChart) barChart.destroy();
+        barChart = new Chart(document.getElementById('myChart'), {
             type: 'bar',
+            data: { labels: barLabels, datasets: [{ label: '成功次數', data: barData, backgroundColor: '#a29bfe' }] },
+            options: { scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } } }
+        });
+
+        // --- 圓餅圖 (Pie Chart) 統計科目 ---
+        const subjectCounts = {};
+        data.forEach(row => {
+            const subs = row.checked_subjects ? row.checked_subjects.split(',') : [];
+            subs.forEach(s => { subjectCounts[s] = (subjectCounts[s] || 0) + 1; });
+        });
+
+        if (pieChart) pieChart.destroy();
+        pieChart = new Chart(document.getElementById('pieChart'), {
+            type: 'doughnut', // 環形圖比較漂亮
             data: {
-                labels: labels,
-                datasets: [{ label: '成功次數', data: successData, backgroundColor: '#a29bfe' }]
-            },
-            options: { 
-                scales: { 
-                    y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } 
-                },
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return "已達成挑戰";
-                            }
-                        }
-                    }
-                }
+                labels: Object.keys(subjectCounts),
+                datasets: [{
+                    data: Object.values(subjectCounts),
+                    backgroundColor: ['#fd79a8', '#fab1a0', '#ffeaa7', '#55efc4', '#81ecec', '#74b9ff', '#a29bfe', '#dfe6e9', '#636e72', '#e17055']
+                }]
             }
         });
     }
