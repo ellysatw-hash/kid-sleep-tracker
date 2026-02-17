@@ -29,17 +29,17 @@
     
     <div class="input-group">
         <label>目標就寢時間</label>
-        <input type="time" id="bedtime" value="21:00" oninput="calculateBuffer()">
+        <input type="time" id="bedtime" value="21:30" oninput="runCalculate()">
     </div>
     
     <div class="input-group">
         <label>今晚複習科目</label>
-        <input type="text" id="subjects" placeholder="例如：數學、國文" oninput="calculateBuffer()">
+        <input type="text" id="subjects" placeholder="例如：數學、英文" oninput="runCalculate()">
     </div>
 
-    <div id="result-display">請輸入時間開始計畫...</div>
+    <div id="result-display">請輸入時間與科目...</div>
     
-    <button onclick="finishTask()">我準時完成了！ 🎉</button>
+    <button onclick="runFinish()">我準時完成了！ 🎉</button>
 </div>
 
 <div class="chart-section">
@@ -48,27 +48,28 @@
 </div>
 
 <script>
-    // ======= 2. 設定區 =======
-    const SUPABASE_URL = 'https://jcclynwwvcnjnjcorlqr.supabase.co'; // 這裡要改！！
-    const SUPABASE_KEY = 'sb_publishable_hCm34wTgpGWyJkWKNApTEw_4Xu_f1Vq';
+    // ======= 1. 設定區 (已填入你的 URL 與 Key) =======
+    const MY_PROJECT_URL = 'https://jcclynwwvcnjnjcorlqr.supabase.co'; 
+    const MY_PROJECT_KEY = 'sb_publishable_hCm34wTgpGWyJkWKNApTEw_4Xu_f1Vq';
 
-    // 這裡我們把變數改名為 mySupabaseClient，避免跟外部庫衝突
-    let mySupabaseClient;
+    let mySupabase;
 
+    // 初始化連線
     try {
-        mySupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // 使用 window.supabase 存取庫，避免變數名稱衝突
+        mySupabase = window.supabase.createClient(MY_PROJECT_URL, MY_PROJECT_KEY);
     } catch (e) {
-        console.log("Supabase 尚未設定完成");
+        console.error("資料庫連線初始化失敗", e);
     }
 
-    // 啟動時先算一次
-    window.onload = function() {
-        calculateBuffer();
-        updateChart();
+    // 網頁載入完成後執行
+    window.onload = () => {
+        runCalculate();
+        runUpdateChart();
     };
 
-    // ======= 3. 核心邏輯 =======
-    function calculateBuffer() {
+    // ======= 2. 緩衝時間計算邏輯 =======
+    function runCalculate() {
         const bedtimeInput = document.getElementById('bedtime').value;
         const subjectsInput = document.getElementById('subjects').value;
         const displayDiv = document.getElementById('result-display');
@@ -76,15 +77,16 @@
         if (!bedtimeInput) return;
 
         const now = new Date();
-        const [hours, minutes] = bedtimeInput.split(':');
-        const bedtimeDate = new Date();
-        bedtimeDate.setHours(parseInt(hours), parseInt(minutes), 0);
+        const [h, m] = bedtimeInput.split(':');
+        const target = new Date();
+        target.setHours(parseInt(h), parseInt(m), 0);
 
-        if (bedtimeDate < now) bedtimeDate.setDate(bedtimeDate.getDate() + 1);
+        // 如果設定時間已過，視為明天
+        if (target < now) target.setDate(target.getDate() + 1);
 
-        let totalMin = Math.floor((bedtimeDate - now) / 60000);
-        const fixed = 30; // 固定雜務
-        const buffer = Math.max(0, Math.floor((totalMin - fixed) * 0.15));
+        let totalMin = Math.floor((target - now) / 60000);
+        const fixed = 30; // 固定雜務（洗澡等）
+        const buffer = Math.max(0, Math.floor((totalMin - fixed) * 0.15)); // 15% 緩衝
         const study = Math.max(0, totalMin - fixed - buffer);
 
         const subs = subjectsInput.split(/[,，、\s]+/).filter(s => s.trim() !== "");
@@ -97,35 +99,37 @@
         `;
     }
 
-    async function finishTask() {
-        // 先噴發紙屑（確保不管資料庫如何，孩子都會看到回饋）
+    // ======= 3. 完成任務與噴紙屑 =======
+    async function runFinish() {
+        // 不管資料庫成不成功，先噴紙屑給孩子看
         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
 
         const bedtime = document.getElementById('bedtime').value;
         const subjects = document.getElementById('subjects').value;
 
-        if (!mySupabaseClient) {
-            alert("網頁已噴紙屑！但資料庫網址還沒填好喔。");
+        if (!mySupabase) {
+            alert("噴紙屑成功！但資料庫設定有誤，無法存檔。");
             return;
         }
 
-        const { error } = await mySupabaseClient
+        const { error } = await mySupabase
             .from('daily_plans')
             .insert([{ bedtime, subjects, is_on_time: true }]);
 
         if (error) {
-            alert("存檔出錯：" + error.message);
+            alert("存檔失敗：" + error.message);
         } else {
             alert("太棒了！紀錄已儲存。");
-            updateChart();
+            runUpdateChart(); // 重新畫圖
         }
     }
 
-    let myChartObj;
-    async function updateChart() {
-        if (!mySupabaseClient) return;
+    // ======= 4. 更新統計圖表 =======
+    let myChartInstance;
+    async function runUpdateChart() {
+        if (!mySupabase) return;
 
-        const { data, error } = await mySupabaseClient
+        const { data, error } = await mySupabase
             .from('daily_plans')
             .select('*')
             .order('created_at', { ascending: true })
@@ -133,24 +137,30 @@
 
         if (error || !data || data.length === 0) return;
 
-        const labels = data.map(d => new Date(d.created_at).getDate() + "日");
-        const successData = data.map(d => 1);
+        const labels = data.map(d => {
+            const date = new Date(d.created_at);
+            return (date.getMonth() + 1) + "/" + date.getDate();
+        });
+        const successData = data.map(d => 1); // 只要有紀錄就視為達成
 
         const ctx = document.getElementById('myChart').getContext('2d');
-        if (myChartObj) myChartObj.destroy();
+        if (myChartInstance) myChartInstance.destroy();
 
-        myChartObj = new Chart(ctx, {
+        myChartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
                 datasets: [{
-                    label: '達成狀態',
+                    label: '達標紀錄',
                     data: successData,
                     backgroundColor: '#a29bfe'
                 }]
             },
             options: {
-                scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } }
+                responsive: true,
+                scales: { 
+                    y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } 
+                }
             }
         });
     }
