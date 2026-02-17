@@ -7,125 +7,154 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <style>
         :root { --primary: #6c5ce7; --bg: #f0f2f5; }
-        body { font-family: sans-serif; background: var(--bg); padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        body { font-family: "Microsoft JhengHei", sans-serif; background: var(--bg); padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 450px; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+        h1 { font-size: 1.5rem; color: var(--primary); text-align: center; }
         .input-group { text-align: left; margin-bottom: 15px; }
-        label { font-weight: bold; color: #636e72; }
-        input { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 1px solid #dfe6e9; box-sizing: border-box; }
-        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 20px 0; border-radius: 8px; min-height: 60px; line-height: 1.5; }
-        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 1.1rem; }
+        label { font-weight: bold; font-size: 0.9rem; color: #636e72; }
+        input { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 1px solid #dfe6e9; box-sizing: border-box; font-size: 1rem; }
+        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 20px 0; border-radius: 8px; font-size: 0.95rem; line-height: 1.6; min-height: 60px; }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #a29bfe; }
+        .chart-section { width: 100%; max-width: 450px; margin-top: 30px; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>🌙 睡前大挑戰</h1>
+    
     <div class="input-group">
         <label>目標就寢時間</label>
-        <input type="time" id="bedtime" value="21:30" oninput="safeCalculate()">
+        <input type="time" id="bedtime" value="21:00" oninput="calculateBuffer()">
     </div>
+    
     <div class="input-group">
         <label>今晚複習科目</label>
-        <input type="text" id="subjects" placeholder="例如：數學、英文" oninput="safeCalculate()">
+        <input type="text" id="subjects" placeholder="例如：數學、國文" oninput="calculateBuffer()">
     </div>
-    <div id="result-display">請輸入時間...</div>
-    <button onclick="safeFinish()">我準時完成了！ 🎉</button>
+
+    <div id="result-display">請輸入時間開始計畫...</div>
+    
+    <button onclick="finishTask()">我準時完成了！ 🎉</button>
 </div>
 
-<div style="width: 100%; max-width: 450px; margin-top: 20px; background: white; padding: 20px; border-radius: 20px;">
+<div class="chart-section">
+    <h3 style="text-align: center;">📊 達成紀錄統計</h3>
     <canvas id="myChart"></canvas>
 </div>
 
 <script>
-    // --- 配置區 ---
-    const S_URL = 'https://jcclynwwvcnjnjcorlqr.supabase.co'; // 例如 https://xyz.supabase.co
-    const S_KEY = 'sb_publishable_hCm34wTgpGWyJkWKNApTEw_4Xu_f1Vq';
+    // ======= 2. 設定區 =======
+    const SUPABASE_URL = 'https://jcclynwwvcnjnjcorlqr.supabase.co'; // 這裡要改！！
+    const SUPABASE_KEY = 'sb_publishable_hCm34wTgpGWyJkWKNApTEw_4Xu_f1Vq';
 
-    let supabaseClient = null;
+    // 這裡我們把變數改名為 mySupabaseClient，避免跟外部庫衝突
+    let mySupabaseClient;
 
-    // 防止 Supabase 初始化失敗導致整個程式壞掉
     try {
-        if (S_URL.startsWith('http')) {
-            supabaseClient = supabase.createClient(S_URL, S_KEY);
-        }
-    } catch (e) { console.error("資料庫連線設定有誤"); }
+        mySupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    } catch (e) {
+        console.log("Supabase 尚未設定完成");
+    }
 
-    // 安全的計算函式
-    function safeCalculate() {
+    // 啟動時先算一次
+    window.onload = function() {
+        calculateBuffer();
+        updateChart();
+    };
+
+    // ======= 3. 核心邏輯 =======
+    function calculateBuffer() {
         const bedtimeInput = document.getElementById('bedtime').value;
         const subjectsInput = document.getElementById('subjects').value;
         const displayDiv = document.getElementById('result-display');
 
+        if (!bedtimeInput) return;
+
         const now = new Date();
-        const [h, m] = bedtimeInput.split(':');
-        let target = new Date();
-        target.setHours(h, m, 0);
-        if (target < now) target.setDate(target.getDate() + 1);
+        const [hours, minutes] = bedtimeInput.split(':');
+        const bedtimeDate = new Date();
+        bedtimeDate.setHours(parseInt(hours), parseInt(minutes), 0);
 
-        let diff = Math.floor((target - now) / 60000);
-        let available = diff - 30; 
-        let buffer = Math.max(0, Math.floor(available * 0.15));
-        let study = Math.max(0, available - buffer);
-        
-        let subs = subjectsInput.split(/[,，、\s]+/).filter(s => s.trim() !== "");
-        let perSub = Math.floor(study / (subs.length || 1));
+        if (bedtimeDate < now) bedtimeDate.setDate(bedtimeDate.getDate() + 1);
 
-        displayDiv.innerHTML = `🕒 距離就寢：${diff} 分鐘<br>🛡️ 緩衝時間：${buffer} 分鐘<br>📚 每個科目可讀：${perSub} 分鐘`;
+        let totalMin = Math.floor((bedtimeDate - now) / 60000);
+        const fixed = 30; // 固定雜務
+        const buffer = Math.max(0, Math.floor((totalMin - fixed) * 0.15));
+        const study = Math.max(0, totalMin - fixed - buffer);
+
+        const subs = subjectsInput.split(/[,，、\s]+/).filter(s => s.trim() !== "");
+        const perSub = Math.floor(study / (subs.length || 1));
+
+        displayDiv.innerHTML = `
+            🕒 距離就寢：<strong>${totalMin} 分鐘</strong><br>
+            🛡️ 緩衝時間：<strong>${buffer} 分鐘</strong><br>
+            📚 每個科目：約 <strong>${perSub} 分鐘</strong>
+        `;
     }
 
-    // 安全的完成函式
-    async function safeFinish() {
-        // 1. 先噴紙屑 (這不依賴資料庫)
+    async function finishTask() {
+        // 先噴發紙屑（確保不管資料庫如何，孩子都會看到回饋）
         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
 
-        // 2. 嘗試存檔
-        if (!supabaseClient) {
-            alert("網頁已噴紙屑！但資料庫連線尚未設定正確，無法記錄喔。");
+        const bedtime = document.getElementById('bedtime').value;
+        const subjects = document.getElementById('subjects').value;
+
+        if (!mySupabaseClient) {
+            alert("網頁已噴紙屑！但資料庫網址還沒填好喔。");
             return;
         }
 
-        const { error } = await supabaseClient.from('daily_plans').insert([
-            { 
-                bedtime: document.getElementById('bedtime').value, 
-                subjects: document.getElementById('subjects').value, 
-                is_on_time: true 
-            }
-        ]);
+        const { error } = await mySupabaseClient
+            .from('daily_plans')
+            .insert([{ bedtime, subjects, is_on_time: true }]);
 
         if (error) {
-            console.error(error);
-            alert("存檔失敗：" + error.message);
+            alert("存檔出錯：" + error.message);
         } else {
-            alert("太棒了！紀錄已儲存");
-            if (typeof updateChart === 'function') updateChart();
+            alert("太棒了！紀錄已儲存。");
+            updateChart();
         }
     }
 
-    // 圖表功能
+    let myChartObj;
     async function updateChart() {
-        if (!supabaseClient) return;
-        const { data } = await supabaseClient.from('daily_plans').select('*').order('created_at', { ascending: true }).limit(30);
-        if (!data) return;
+        if (!mySupabaseClient) return;
+
+        const { data, error } = await mySupabaseClient
+            .from('daily_plans')
+            .select('*')
+            .order('created_at', { ascending: true })
+            .limit(30);
+
+        if (error || !data || data.length === 0) return;
+
+        const labels = data.map(d => new Date(d.created_at).getDate() + "日");
+        const successData = data.map(d => 1);
 
         const ctx = document.getElementById('myChart').getContext('2d');
-        if (window.chartObj) window.chartObj.destroy();
-        window.chartObj = new Chart(ctx, {
+        if (myChartObj) myChartObj.destroy();
+
+        myChartObj = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: data.map(d => new Date(d.created_at).getDate() + "日"),
-                datasets: [{ label: '達成', data: data.map(d => 1), backgroundColor: '#a29bfe' }]
+                labels: labels,
+                datasets: [{
+                    label: '達成狀態',
+                    data: successData,
+                    backgroundColor: '#a29bfe'
+                }]
             },
-            options: { scales: { y: { max: 1, beginAtZero: true } } }
+            options: {
+                scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } }
+            }
         });
     }
-
-    // 啟動
-    window.onload = () => {
-        safeCalculate();
-        updateChart();
-    };
 </script>
+
 </body>
 </html>
