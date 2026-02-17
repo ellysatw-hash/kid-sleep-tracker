@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小當家作戰總部</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #fdf6e3; text-align: center; padding: 20px; }
+        .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        input, button { padding: 10px; margin: 10px 0; width: 80%; border-radius: 8px; border: 1px solid #ddd; }
+        button { background: #6c5ce7; color: white; cursor: pointer; font-weight: bold; border: none; }
+        button:hover { background: #a29bfe; }
+        .chart-container { margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🌙 睡前大挑戰</h1>
+    <label>目標就寢時間：</label><br>
+    <input type="time" id="bedtime" value="21:00"><br>
+    
+    <label>今晚複習科目：</label><br>
+    <input type="text" id="subjects" placeholder="例如：數學、國文"><br>
+    
+    <button onclick="finishTask()">我準時完成了！ 🎉</button>
+
+    <hr>
+    <h3>本月戰績統計</h3>
+    <div class="chart-container">
+        <canvas id="myChart"></canvas>
+    </div>
+</div>
+
+<script>
+    // --- 1. 初始化 Supabase ---
+    // 請換成你自己的 Supabase URL 和 Anon Key
+    const SUPABASE_URL = '你的SUPABASE_URL';
+    const SUPABASE_KEY = '你的SUPABASE_ANON_KEY';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // --- 2. 準時完成的動作 ---
+    async function finishTask() {
+        const bedtime = document.getElementById('bedtime').value;
+        const subjects = document.getElementById('subjects').value;
+
+        // 噴發紙屑特效
+        confetti({
+            particleCount: 150,
+            spread: 70,
+            origin: { y: 0.6 }
+        });
+
+        // 將資料存入 Supabase
+        const { data, error } = await supabase
+            .from('daily_plans')
+            .insert([{ 
+                bedtime: bedtime, 
+                subjects: subjects, 
+                is_on_time: true 
+            }]);
+
+        if (error) {
+            console.error('儲存失敗:', error);
+        } else {
+            alert('太棒了！紀錄已儲存。');
+            updateChart(); // 更新圖表
+        }
+    }
+
+    // --- 3. 畫出統計圖表 ---
+    let myChart;
+    async function updateChart() {
+        // 從 Supabase 抓取最近 30 筆資料
+        const { data, error } = await supabase
+            .from('daily_plans')
+            .select('*')
+            .order('created_at', { ascending: true })
+            .limit(30);
+
+        if (error) return;
+
+        const labels = data.map(item => new Date(item.created_at).getDate() + "日");
+        const successData = data.map(item => item.is_on_time ? 1 : 0);
+
+        const ctx = document.getElementById('myChart').getContext('2d');
+        
+        if (myChart) myChart.destroy(); // 重新整理圖表避免重疊
+
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '準時達標 (1為成功)',
+                    data: successData,
+                    borderColor: '#6c5ce7',
+                    tension: 0.1,
+                    fill: true,
+                    backgroundColor: 'rgba(108, 92, 231, 0.2)'
+                }]
+            },
+            options: {
+                scales: { y: { beginAtZero: true, max: 1 } }
+            }
+        });
+    }
+
+    // 網頁開啟時先載入圖表
+    updateChart();
+</script>
+
+</body>
+</html>
