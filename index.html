@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小當家作戰總部-多子版</title>
+    <title>家人作息大挑戰</title>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -13,21 +13,21 @@
         .container { width: 100%; max-width: 450px; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
         .input-group { text-align: left; margin-bottom: 12px; }
         label { font-weight: bold; font-size: 0.9rem; color: #636e72; }
-        /* 這裡特別把下拉選單加顏色，方便辨認 */
-        select { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 2px solid var(--primary); background-color: #f0edff; font-size: 1.1rem; }
+        select { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 2px solid var(--primary); background-color: #f0edff; font-size: 1.1rem; cursor: pointer; }
         input { width: 100%; padding: 12px; margin-top: 5px; border-radius: 10px; border: 1px solid #dfe6e9; box-sizing: border-box; font-size: 1rem; }
-        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 15px 0; border-radius: 8px; font-size: 0.95rem; min-height: 60px; }
-        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; }
+        #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 15px; margin: 15px 0; border-radius: 8px; font-size: 0.95rem; min-height: 60px; line-height: 1.6; }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #a29bfe; }
         .chart-section { width: 100%; max-width: 450px; margin-top: 20px; background: white; padding: 20px; border-radius: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1 style="color: var(--primary); margin-top:0;">🌙 作息挑戰 </h1>
+    <h1 style="color: var(--primary); text-align:center; margin-top:0;">🏡 家人作息大挑戰</h1>
     
     <div class="input-group">
-        <label>正在為誰設定？</label>
+        <label>挑戰成員：</label>
         <select id="childName" onchange="runUpdateChart()">
             <option value="小佑">👦 小佑</option>
             <option value="媽媽">👧 媽媽</option>
@@ -40,16 +40,16 @@
     </div>
     
     <div class="input-group">
-        <label>今晚複習科目</label>
-        <input type="text" id="subjects" placeholder="例如：數學、國文" oninput="runCalculate()">
+        <label>複習科目 / 任務</label>
+        <input type="text" id="subjects" placeholder="例如：數學、整理書包" oninput="runCalculate()">
     </div>
 
     <div id="result-display">讀取中...</div>
-    <button onclick="runFinish()">我完成了！ 🎉</button>
+    <button onclick="runFinish()">我達成了！ 🎉</button>
 </div>
 
 <div class="chart-section">
-    <h3 id="chart-title" style="text-align: center; color: #6c5ce7;">統計紀錄</h3>
+    <h3 id="chart-title" style="text-align: center; color: #6c5ce7;">進度追蹤</h3>
     <canvas id="myChart"></canvas>
 </div>
 
@@ -62,7 +62,10 @@
         mySupabase = window.supabase.createClient(MY_PROJECT_URL, MY_PROJECT_KEY);
     } catch (e) { console.error(e); }
 
-    window.onload = () => { runCalculate(); runUpdateChart(); };
+    window.onload = () => { 
+        runCalculate(); 
+        setTimeout(runUpdateChart, 500);
+    };
 
     function runCalculate() {
         const bedtimeInput = document.getElementById('bedtime').value;
@@ -80,7 +83,7 @@
         const study = Math.max(0, totalMin - fixed - buffer);
         const subs = subjectsInput.split(/[,，、\s]+/).filter(s => s.trim() !== "");
         const perSub = Math.floor(study / (subs.length || 1));
-        displayDiv.innerHTML = `🕒 距離就寢：${totalMin}分<br>🛡️ 緩衝時間：${buffer}分<br>📚 每個科目：約 ${perSub} 分鐘`;
+        displayDiv.innerHTML = `🕒 距離目標：<strong>${totalMin}</strong> 分鐘<br>🛡️ 緩衝時間：<strong>${buffer}</strong> 分鐘<br>📊 任務分配：平均 <strong>${perSub}</strong> 分鐘`;
     }
 
     async function runFinish() {
@@ -95,7 +98,7 @@
 
         if (error) alert("存檔失敗：" + error.message);
         else {
-            alert(name + " 紀錄成功！你是最棒的！");
+            alert(name + " 紀錄成功！你是自律小達人！");
             runUpdateChart();
         }
     }
@@ -104,7 +107,7 @@
     async function runUpdateChart() {
         if (!mySupabase) return;
         const currentChild = document.getElementById('childName').value;
-        document.getElementById('chart-title').innerText = currentChild + " 的達成次數";
+        document.getElementById('chart-title').innerText = currentChild + " 的達標紀錄";
 
         const { data, error } = await mySupabase
             .from('daily_plans')
@@ -123,7 +126,7 @@
             type: 'bar',
             data: {
                 labels: labels,
-                datasets: [{ label: '達成狀態', data: successData, backgroundColor: '#a29bfe' }]
+                datasets: [{ label: '成功次數', data: successData, backgroundColor: '#a29bfe' }]
             },
             options: { scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } } }
         });
