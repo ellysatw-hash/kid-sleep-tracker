@@ -23,6 +23,12 @@
         .btn-finish { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; flex: 1; cursor: pointer; display: none; }
         
         .chart-section { width: 100%; max-width: 420px; margin-top: 20px; background: white; padding: 15px; border-radius: 20px; text-align: center; }
+        
+        /* 歷史清單樣式 */
+        .history-list { text-align: left; margin-top: 10px; padding: 0; list-style: none; }
+        .history-item { background: #f8f9fa; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 0.85rem; display: flex; justify-content: space-between; border-left: 3px solid var(--success); }
+        .history-date { color: #636e72; font-weight: bold; }
+        .history-time { color: var(--primary); font-weight: bold; }
     </style>
 </head>
 <body>
@@ -67,6 +73,12 @@
     </div>
 </div>
 
+<div class="chart-section">
+    <h3>📋 最近完成紀錄</h3>
+    <ul id="historyList" class="history-list">
+        </ul>
+</div>
+
 <div class="chart-section"><canvas id="myChart" height="150"></canvas></div>
 <div class="chart-section"><canvas id="pieChart"></canvas></div>
 
@@ -77,6 +89,8 @@
     try { db = window.supabase.createClient(MY_URL, MY_KEY); } catch (e) { console.error(e); }
 
     let currentPlanId = null;
+
+    window.onload = () => { runCalculate(); setTimeout(runUpdateChart, 500); };
 
     function getChecked() { return Array.from(document.querySelectorAll('#subjectGrid input:checked')).map(cb => cb.value); }
 
@@ -93,37 +107,30 @@
         const buffer = Math.max(0, Math.floor((diff - 30) * 0.15));
         const study = Math.max(0, diff - 30 - buffer);
         const per = subs.length > 0 ? Math.floor(study / subs.length) : 0;
-        res.innerHTML = `🕒 剩餘時間：${diff}分<br>🛡️ 緩衝時間：${buffer}分<br>📊 每項規劃分配：${per} 分鐘`;
+        res.innerHTML = `🕒 剩餘時間：${diff}分<br>🛡️ 緩衝時間：${buffer}分<br>📊 任務分配建議：${per} 分鐘/項`;
     }
 
-    // 階段一：儲存事前規劃
- async function savePlan() {
-    const subs = getChecked();
-    if (subs.length === 0) return alert("請先勾選規劃項目！");
-    
-    // 取得勾選項目的字串，例如 "國語,數學"
-    const subjectsString = subs.join(',');
+    async function savePlan() {
+        const subs = getChecked();
+        if (subs.length === 0) return alert("請先勾選規劃項目！");
+        const subjectsString = subs.join(',');
+        const { data, error } = await db.from('daily_plans').insert([{ 
+            child_name: document.getElementById('childName').value, 
+            bedtime: document.getElementById('bedtime').value, 
+            subjects: subjectsString,
+            checked_subjects: subjectsString, 
+            status: 'planning'
+        }]).select();
 
-    const { data, error } = await db.from('daily_plans').insert([{ 
-        child_name: document.getElementById('childName').value, 
-        bedtime: document.getElementById('bedtime').value, 
-        subjects: subjectsString,         // 同時填入舊欄位
-        checked_subjects: subjectsString, // 同時填入新欄位
-        status: 'planning'
-    }]).select();
-
-    if (error) {
-        console.error("詳細錯誤資訊：", error);
-        alert("鎖定失敗：" + error.message);
-    } else {
-        currentPlanId = data[0].id;
-        alert("計畫已鎖定！開始挑戰吧！");
-        document.getElementById('btnPlan').style.display = 'none';
-        document.getElementById('btnFinish').style.display = 'block';
+        if (error) alert("鎖定失敗：" + error.message);
+        else {
+            currentPlanId = data[0].id;
+            alert("計畫已鎖定！加油！");
+            document.getElementById('btnPlan').style.display = 'none';
+            document.getElementById('btnFinish').style.display = 'block';
+        }
     }
-}
 
-    // 階段二：更新實際紀錄
     async function completePlan() {
         if (!currentPlanId) return;
         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
@@ -137,7 +144,7 @@
 
         if (error) alert(error.message);
         else {
-            alert("挑戰達成！實際完成時間：" + fTime);
+            alert("挑戰達成！完成時間：" + fTime);
             resetUI();
             runUpdateChart();
         }
@@ -149,18 +156,34 @@
         currentPlanId = null;
     }
 
-    // 圖表部分維持原樣 (省略部分重複邏輯以節省空間)...
     let c1, c2;
     async function runUpdateChart() {
         if (!db) return;
         const name = document.getElementById('childName').value;
         const { data } = await db.from('daily_plans').select('*').eq('child_name', name).eq('status','completed').order('created_at', { ascending: false }).limit(20);
-        if (!data) return;
+        
+        // 更新歷史清單
+        const listEl = document.getElementById('historyList');
+        listEl.innerHTML = "";
+        if (data) {
+            data.slice(0, 5).forEach(item => { // 只顯示最近5筆
+                const date = new Date(item.created_at);
+                const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
+                const li = document.createElement('li');
+                li.className = 'history-item';
+                li.innerHTML = `<span class="history-date">📅 ${dateStr}</span> 
+                                <span>${item.checked_subjects.split(',').length} 項任務</span>
+                                <span class="history-time">⏰ ${item.actual_finish_time}</span>`;
+                listEl.appendChild(li);
+            });
+        }
+
+        if (!data || data.length === 0) return;
         const rev = [...data].reverse();
         if (c1) c1.destroy();
         c1 = new Chart(document.getElementById('myChart'), {
             type: 'bar',
-            data: { labels: rev.map(d => (new Date(d.created_at).getMonth()+1)+"/"+new Date(d.created_at).getDate()), datasets: [{ label: '已達成挑戰', data: rev.map(()=>1), backgroundColor: '#a29bfe' }] },
+            data: { labels: rev.map(d => (new Date(d.created_at).getMonth()+1)+"/"+new Date(d.created_at).getDate()), datasets: [{ label: '已完成', data: rev.map(()=>1), backgroundColor: '#a29bfe' }] },
             options: { scales: { y: { max: 1, ticks: { stepSize: 1 } } } }
         });
         const counts = {};
