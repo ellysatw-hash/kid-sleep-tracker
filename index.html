@@ -97,25 +97,31 @@
     }
 
     // 階段一：儲存事前規劃
-    async function savePlan() {
-        const subs = getChecked();
-        if (subs.length === 0) return alert("請先勾選規劃項目！");
-        
-        const { data, error } = await db.from('daily_plans').insert([{ 
-            child_name: document.getElementById('childName').value, 
-            bedtime: document.getElementById('bedtime').value, 
-            checked_subjects: subs.join(','), 
-            status: 'planning'
-        }]).select();
+ async function savePlan() {
+    const subs = getChecked();
+    if (subs.length === 0) return alert("請先勾選規劃項目！");
+    
+    // 取得勾選項目的字串，例如 "國語,數學"
+    const subjectsString = subs.join(',');
 
-        if (error) alert(error.message);
-        else {
-            currentPlanId = data[0].id;
-            alert("計畫已鎖定！加油，開始執行吧！");
-            document.getElementById('btnPlan').style.display = 'none';
-            document.getElementById('btnFinish').style.display = 'block';
-        }
+    const { data, error } = await db.from('daily_plans').insert([{ 
+        child_name: document.getElementById('childName').value, 
+        bedtime: document.getElementById('bedtime').value, 
+        subjects: subjectsString,         // 同時填入舊欄位
+        checked_subjects: subjectsString, // 同時填入新欄位
+        status: 'planning'
+    }]).select();
+
+    if (error) {
+        console.error("詳細錯誤資訊：", error);
+        alert("鎖定失敗：" + error.message);
+    } else {
+        currentPlanId = data[0].id;
+        alert("計畫已鎖定！開始挑戰吧！");
+        document.getElementById('btnPlan').style.display = 'none';
+        document.getElementById('btnFinish').style.display = 'block';
     }
+}
 
     // 階段二：更新實際紀錄
     async function completePlan() {
