@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root { --primary: #6c5ce7; --bg: #f0f2f5; --success: #00b894; --accent: #fd79a8; }
+        :root { --primary: #6c5ce7; --bg: #f0f2f5; --success: #00b894; --accent: #fd79a8; --danger: #ff7675; }
         body { font-family: "Microsoft JhengHei", sans-serif; background: var(--bg); padding: 15px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 420px; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
         .input-group { text-align: left; margin-bottom: 12px; }
@@ -18,13 +18,12 @@
         .subject-item { display: flex; align-items: center; font-size: 0.85rem; cursor: pointer; }
         #result-display { background: #f9f9ff; border-left: 5px solid var(--primary); padding: 12px; margin: 15px 0; border-radius: 8px; font-size: 0.9rem; line-height: 1.5; }
         
-        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
-        .btn-plan { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; flex: 1; cursor: pointer; }
-        .btn-finish { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; flex: 1; cursor: pointer; display: none; }
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .btn-plan { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; flex: 1; cursor: pointer; min-width: 100%; }
+        .btn-finish { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; flex: 2; cursor: pointer; display: none; }
+        .btn-cancel { background: var(--danger); color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; flex: 1; cursor: pointer; display: none; font-size: 0.8rem; }
         
         .chart-section { width: 100%; max-width: 420px; margin-top: 20px; background: white; padding: 15px; border-radius: 20px; text-align: center; }
-        
-        /* 歷史清單樣式 */
         .history-list { text-align: left; margin-top: 10px; padding: 0; list-style: none; }
         .history-item { background: #f8f9fa; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 0.85rem; display: flex; justify-content: space-between; border-left: 3px solid var(--success); }
         .history-date { color: #636e72; font-weight: bold; }
@@ -70,13 +69,13 @@
     <div class="btn-group">
         <button id="btnPlan" class="btn-plan" onclick="savePlan()">📝 鎖定今晚計畫</button>
         <button id="btnFinish" class="btn-finish" onclick="completePlan()">🎉 我完成了！</button>
+        <button id="btnCancel" class="btn-cancel" onclick="cancelPlan()">✖ 取消計畫</button>
     </div>
 </div>
 
 <div class="chart-section">
     <h3>📋 最近完成紀錄</h3>
-    <ul id="historyList" class="history-list">
-        </ul>
+    <ul id="historyList" class="history-list"></ul>
 </div>
 
 <div class="chart-section"><canvas id="myChart" height="150"></canvas></div>
@@ -90,7 +89,24 @@
 
     let currentPlanId = null;
 
-    window.onload = () => { runCalculate(); setTimeout(runUpdateChart, 500); };
+    window.onload = () => { 
+        runCalculate(); 
+        checkActivePlan(); 
+        setTimeout(runUpdateChart, 500); 
+    };
+
+    function checkActivePlan() {
+        const savedId = localStorage.getItem('activePlanId');
+        const savedName = localStorage.getItem('activePlanName');
+        if (savedId) {
+            currentPlanId = savedId;
+            if (savedName) document.getElementById('childName').value = savedName;
+            document.getElementById('btnPlan').style.display = 'none';
+            document.getElementById('btnFinish').style.display = 'block';
+            document.getElementById('btnCancel').style.display = 'block';
+            document.getElementById('result-display').innerHTML = "⚠️ 計畫進行中，加油！";
+        }
+    }
 
     function getChecked() { return Array.from(document.querySelectorAll('#subjectGrid input:checked')).map(cb => cb.value); }
 
@@ -114,8 +130,10 @@
         const subs = getChecked();
         if (subs.length === 0) return alert("請先勾選規劃項目！");
         const subjectsString = subs.join(',');
+        const childName = document.getElementById('childName').value;
+
         const { data, error } = await db.from('daily_plans').insert([{ 
-            child_name: document.getElementById('childName').value, 
+            child_name: childName, 
             bedtime: document.getElementById('bedtime').value, 
             subjects: subjectsString,
             checked_subjects: subjectsString, 
@@ -125,9 +143,31 @@
         if (error) alert("鎖定失敗：" + error.message);
         else {
             currentPlanId = data[0].id;
-            alert("計畫已鎖定！加油！");
+            localStorage.setItem('activePlanId', currentPlanId);
+            localStorage.setItem('activePlanName', childName);
+            
             document.getElementById('btnPlan').style.display = 'none';
             document.getElementById('btnFinish').style.display = 'block';
+            document.getElementById('btnCancel').style.display = 'block';
+            document.getElementById('result-display').innerHTML = "📝 計畫已鎖定！";
+        }
+    }
+
+    async function cancelPlan() {
+        if (!currentPlanId) return;
+        if (!confirm("確定要取消目前的計畫並重來嗎？")) return;
+
+        // 從資料庫刪除該筆未完成紀錄
+        const { error } = await db.from('daily_plans').delete().eq('id', currentPlanId);
+
+        if (error) {
+            alert("取消失敗：" + error.message);
+        } else {
+            localStorage.removeItem('activePlanId');
+            localStorage.removeItem('activePlanName');
+            alert("計畫已取消，請重新規劃。");
+            resetUI();
+            runCalculate();
         }
     }
 
@@ -144,7 +184,9 @@
 
         if (error) alert(error.message);
         else {
-            alert("挑戰達成！完成時間：" + fTime);
+            alert("挑戰達成！");
+            localStorage.removeItem('activePlanId');
+            localStorage.removeItem('activePlanName');
             resetUI();
             runUpdateChart();
         }
@@ -153,6 +195,8 @@
     function resetUI() {
         document.getElementById('btnPlan').style.display = 'block';
         document.getElementById('btnFinish').style.display = 'none';
+        document.getElementById('btnCancel').style.display = 'none';
+        document.getElementById('result-display').innerHTML = "請填寫規劃...";
         currentPlanId = null;
     }
 
@@ -162,17 +206,15 @@
         const name = document.getElementById('childName').value;
         const { data } = await db.from('daily_plans').select('*').eq('child_name', name).eq('status','completed').order('created_at', { ascending: false }).limit(20);
         
-        // 更新歷史清單
         const listEl = document.getElementById('historyList');
         listEl.innerHTML = "";
         if (data) {
-            data.slice(0, 5).forEach(item => { // 只顯示最近5筆
+            data.slice(0, 5).forEach(item => {
                 const date = new Date(item.created_at);
-                const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
                 const li = document.createElement('li');
                 li.className = 'history-item';
-                li.innerHTML = `<span class="history-date">📅 ${dateStr}</span> 
-                                <span>${item.checked_subjects.split(',').length} 項任務</span>
+                li.innerHTML = `<span class="history-date">📅 ${date.getMonth()+1}/${date.getDate()}</span> 
+                                <span>${item.checked_subjects ? item.checked_subjects.split(',').length : 0} 項</span>
                                 <span class="history-time">⏰ ${item.actual_finish_time}</span>`;
                 listEl.appendChild(li);
             });
